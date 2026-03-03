@@ -410,3 +410,371 @@ fn flush_segment(out: &mut String, buffer: &mut String, style: StyleKind, config
 
     buffer.clear();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use crate::search::SearchMatch;
+
+    fn cfg() -> Config {
+        Config::defaults()
+    }
+
+    /// Helper: build the expected string for base-styled text (no matches).
+    fn base(text: &str, config: &Config) -> String {
+        format!(
+            "{}{}{}",
+            config.style_sequences.base, text, config.style_sequences.reset
+        )
+    }
+
+    /// Helper: wrap text in highlight style with surrounding reset/base.
+    fn highlight(text: &str, config: &Config) -> String {
+        format!(
+            "{}{}{}{}",
+            config.style_sequences.reset,
+            config.highlight_style.apply(text),
+            config.style_sequences.reset,
+            config.style_sequences.base,
+        )
+    }
+
+    /// Helper: wrap text in current-match style with surrounding reset/base.
+    fn current_style(text: &str, config: &Config) -> String {
+        format!(
+            "{}{}{}{}",
+            config.style_sequences.reset,
+            config.current_style.apply(text),
+            config.style_sequences.reset,
+            config.style_sequences.base,
+        )
+    }
+
+    /// Helper: wrap a label character in label style with surrounding reset/base.
+    fn label(ch: char, config: &Config) -> String {
+        format!(
+            "{}{}{}{}",
+            config.style_sequences.reset,
+            config.label_style.apply(&ch.to_string()),
+            config.style_sequences.reset,
+            config.style_sequences.base,
+        )
+    }
+
+    fn make_match(
+        text: &str,
+        line: usize,
+        col: usize,
+        match_start: usize,
+        match_end: usize,
+        lbl: Option<char>,
+    ) -> SearchMatch {
+        SearchMatch {
+            text: text.to_string(),
+            line,
+            col,
+            label: lbl,
+            match_start,
+            match_end,
+        }
+    }
+
+    // --- empty / no-match cases ---
+
+    #[test]
+    fn empty_line_no_matches() {
+        let c = cfg();
+        let result = render_line_with_matches("", &[], &c, None);
+        let expected = format!("{}{}", c.style_sequences.base, c.style_sequences.reset);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn non_empty_line_no_matches() {
+        let c = cfg();
+        let result = render_line_with_matches("hello world", &[], &c, None);
+        assert_eq!(result, base("hello world", &c));
+    }
+
+    // --- single match ---
+
+    #[test]
+    fn single_highlight_match() {
+        let c = cfg();
+        // line: "foo bar", match on "foo" (col=0, match_start=0, match_end=3), no label
+        let m = make_match("foo", 0, 0, 0, 3, None);
+        let matches = vec![&m];
+        let result = render_line_with_matches("foo bar", &matches, &c, None);
+
+        let expected = format!(
+            "{}{}{}{}",
+            c.style_sequences.base,
+            highlight("foo", &c),
+            " bar",
+            c.style_sequences.reset,
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn single_current_match() {
+        let c = cfg();
+        // "foo bar", match on "foo", marked as current
+        let m = make_match("foo", 0, 0, 0, 3, None);
+        let matches = vec![&m];
+        let current = Some((0, 0, 3));
+        let result = render_line_with_matches("foo bar", &matches, &c, current);
+
+        let expected = format!(
+            "{}{}{}{}",
+            c.style_sequences.base,
+            current_style("foo", &c),
+            " bar",
+            c.style_sequences.reset,
+        );
+        assert_eq!(result, expected);
+    }
+
+    // --- labels ---
+
+    #[test]
+    fn label_inserted_after_match() {
+        let c = cfg();
+        // "foo bar", match "foo" with label 'a'. Label appears at byte 3 (right after "foo").
+        let m = make_match("foo", 0, 0, 0, 3, Some('a'));
+        let matches = vec![&m];
+        let result = render_line_with_matches("foo bar", &matches, &c, None);
+
+        // "foo" highlighted, then label 'a' replaces the space, then "bar" as base
+        let expected = format!(
+            "{}{}{}{}{}",
+            c.style_sequences.base,
+            highlight("foo", &c),
+            label('a', &c),
+            "bar",
+            c.style_sequences.reset,
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn label_at_end_of_line() {
+        let c = cfg();
+        // "foo", match "foo" (entire token), label 'a'. Label at position 3 == line.len().
+        let m = make_match("foo", 0, 0, 0, 3, Some('a'));
+        let matches = vec![&m];
+        let result = render_line_with_matches("foo", &matches, &c, None);
+
+        let expected = format!(
+            "{}{}{}{}",
+            c.style_sequences.base,
+            highlight("foo", &c),
+            label('a', &c),
+            c.style_sequences.reset,
+        );
+        assert_eq!(result, expected);
+    }
+
+    // --- match in the middle of a line ---
+
+    #[test]
+    fn match_in_middle_of_line() {
+        let c = cfg();
+        // "hello world end", match on "world" at col=6, match_start=0, match_end=5
+        let m = make_match("world", 0, 6, 0, 5, None);
+        let matches = vec![&m];
+        let result = render_line_with_matches("hello world end", &matches, &c, None);
+
+        let expected = format!(
+            "{}{}{}{}{}",
+            c.style_sequences.base,
+            "hello ",
+            highlight("world", &c),
+            " end",
+            c.style_sequences.reset,
+        );
+        assert_eq!(result, expected);
+    }
+
+    // --- multiple matches on the same line ---
+
+    #[test]
+    fn multiple_matches_same_line() {
+        let c = cfg();
+        // "foo bar foo", two "foo" tokens: col=0 and col=8
+        let m1 = make_match("foo", 0, 0, 0, 3, Some('a'));
+        let m2 = make_match("foo", 0, 8, 0, 3, Some('s'));
+        let matches = vec![&m1, &m2];
+        let result = render_line_with_matches("foo bar foo", &matches, &c, None);
+
+        let expected = format!(
+            "{}{}{}{}{}{}{}",
+            c.style_sequences.base,
+            highlight("foo", &c),
+            label('a', &c),
+            "bar ",
+            highlight("foo", &c),
+            label('s', &c),
+            c.style_sequences.reset,
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn one_current_one_highlight() {
+        let c = cfg();
+        // "foo bar foo", first match is current, second is highlight
+        let m1 = make_match("foo", 0, 0, 0, 3, Some('a'));
+        let m2 = make_match("foo", 0, 8, 0, 3, Some('s'));
+        let matches = vec![&m1, &m2];
+        let current = Some((0, 0, 3)); // m1 is current
+        let result = render_line_with_matches("foo bar foo", &matches, &c, current);
+
+        let expected = format!(
+            "{}{}{}{}{}{}{}",
+            c.style_sequences.base,
+            current_style("foo", &c),
+            label('a', &c),
+            "bar ",
+            highlight("foo", &c),
+            label('s', &c),
+            c.style_sequences.reset,
+        );
+        assert_eq!(result, expected);
+    }
+
+    // --- match without label ---
+
+    #[test]
+    fn match_without_label() {
+        let c = cfg();
+        // match on "bar" with no label assigned
+        let m = make_match("bar", 0, 4, 0, 3, None);
+        let matches = vec![&m];
+        let result = render_line_with_matches("foo bar baz", &matches, &c, None);
+
+        let expected = format!(
+            "{}{}{}{}{}",
+            c.style_sequences.base,
+            "foo ",
+            highlight("bar", &c),
+            " baz",
+            c.style_sequences.reset,
+        );
+        assert_eq!(result, expected);
+    }
+
+    // --- partial match within a token ---
+
+    #[test]
+    fn partial_match_within_token() {
+        let c = cfg();
+        // "foobar", match on "oo" within "foobar" (col=0, match_start=1, match_end=3)
+        let m = make_match("foobar", 0, 0, 1, 3, Some('a'));
+        let matches = vec![&m];
+        let result = render_line_with_matches("foobar", &matches, &c, None);
+
+        // "f" base, "oo" highlighted, label 'a' replaces 'b', "ar" base
+        let expected = format!(
+            "{}{}{}{}{}{}",
+            c.style_sequences.base,
+            "f",
+            highlight("oo", &c),
+            label('a', &c),
+            "ar",
+            c.style_sequences.reset,
+        );
+        assert_eq!(result, expected);
+    }
+
+    // --- current match takes priority over highlight ---
+
+    #[test]
+    fn current_priority_over_highlight() {
+        let c = cfg();
+        // Two matches at the same position: if one is current, current style wins.
+        // This can happen with overlapping matches from different query tokens.
+        // "abcabc", match1: col=0 match_start=0 match_end=3 (highlight)
+        //           match2: col=0 match_start=1 match_end=3 (current)
+        // Bytes 0 = highlight, bytes 1-2 = current (higher priority)
+        let m1 = make_match("abcabc", 0, 0, 0, 3, None);
+        let m2 = make_match("abcabc", 0, 0, 1, 3, None);
+        let matches = vec![&m1, &m2];
+        let current = Some((0, 1, 3)); // m2 is current
+        let result = render_line_with_matches("abcabc", &matches, &c, current);
+
+        let expected = format!(
+            "{}{}{}{}{}",
+            c.style_sequences.base,
+            highlight("a", &c),
+            current_style("bc", &c),
+            "abc",
+            c.style_sequences.reset,
+        );
+        assert_eq!(result, expected);
+    }
+
+    // --- label deduplication at same position ---
+
+    #[test]
+    fn duplicate_label_positions_deduplicated() {
+        let c = cfg();
+        // Two matches that would place labels at the same position.
+        // Both end at col+match_end = 3. Only one label should appear.
+        let m1 = make_match("foo", 0, 0, 0, 3, Some('a'));
+        let m2 = make_match("foo", 0, 0, 0, 3, Some('s'));
+        let matches = vec![&m1, &m2];
+        let result = render_line_with_matches("foo bar", &matches, &c, None);
+
+        // Both matches highlight "foo", but only one label at position 3.
+        // label_positions dedup keeps the first one ('a').
+        let expected = format!(
+            "{}{}{}{}{}",
+            c.style_sequences.base,
+            highlight("foo", &c),
+            label('a', &c),
+            "bar",
+            c.style_sequences.reset,
+        );
+        assert_eq!(result, expected);
+    }
+
+    // --- build_search_bar_output ---
+
+    #[test]
+    fn search_bar_empty_query() {
+        let c = cfg();
+        let ui = InteractiveUI {
+            pane_id: String::new(),
+            search: SearchInterface::new("", c.label_characters.clone()),
+            search_query: String::new(),
+            cursor_pos: 0,
+            config: c.clone(),
+        };
+
+        let result = ui.build_search_bar_output();
+        let expected = format!(
+            "{} {}",
+            c.prompt_style.apply(&c.prompt_indicator),
+            c.base_style.apply(&c.prompt_placeholder_text),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn search_bar_with_query() {
+        let c = cfg();
+        let ui = InteractiveUI {
+            pane_id: String::new(),
+            search: SearchInterface::new("", c.label_characters.clone()),
+            search_query: "hello".to_string(),
+            cursor_pos: 5,
+            config: c.clone(),
+        };
+
+        let result = ui.build_search_bar_output();
+        let expected = format!("{} hello", c.prompt_style.apply(&c.prompt_indicator),);
+        assert_eq!(result, expected);
+    }
+}
