@@ -76,9 +76,50 @@ pub fn get_tmux_pane_id() -> Result<String> {
         .context("failed to get pane id")
 }
 
-pub fn capture_pane(pane_id: &str) -> Result<String> {
+pub fn capture_pane(pane_id: &str, copy_mode: bool) -> Result<String> {
+    if copy_mode && let Some((start, end)) = copy_mode_line_range(pane_id) {
+        return tmux_output_trim(
+            &[
+                "capture-pane",
+                "-p",
+                "-J",
+                "-S",
+                &start,
+                "-E",
+                &end,
+                "-t",
+                pane_id,
+            ],
+            TrimMode::None,
+        )
+        .context("failed to capture pane in copy-mode");
+    }
+
     tmux_output_trim(&["capture-pane", "-p", "-J", "-t", pane_id], TrimMode::None)
         .context("failed to capture pane")
+}
+
+fn copy_mode_line_range(pane_id: &str) -> Option<(String, String)> {
+    let out = tmux_output_trim(
+        &[
+            "display-message",
+            "-t",
+            pane_id,
+            "-p",
+            "#{scroll_position} #{pane_height}",
+        ],
+        TrimMode::Trim,
+    )
+    .ok()?;
+
+    let mut parts = out.split_whitespace();
+    let scroll: i32 = parts.next()?.parse().ok()?;
+    let height: i32 = parts.next()?.parse().ok()?;
+
+    let start = -scroll;
+    let end = -scroll + height - 1;
+
+    Some((start.to_string(), end.to_string()))
 }
 
 pub fn capture_pane_window_dims() -> Option<String> {
@@ -126,6 +167,19 @@ pub fn calculate_popup_position(dimensions: &PaneDimensions) -> (i32, i32, i32, 
         dimensions.bottom + 1
     };
     (dimensions.left, y, dimensions.width, dimensions.height)
+}
+
+pub fn is_in_copy_mode(pane_id: &str) -> bool {
+    tmux_output_trim(
+        &["display-message", "-t", pane_id, "-p", "#{pane_mode}"],
+        TrimMode::Trim,
+    )
+    .map(|mode| mode == "copy-mode")
+    .unwrap_or(false)
+}
+
+pub fn exit_copy_mode(pane_id: &str) {
+    tmux_run_quiet(&["copy-mode", "-q", "-t", pane_id]);
 }
 
 fn tmux_output_trim(args: &[&str], trim: TrimMode) -> Result<String> {

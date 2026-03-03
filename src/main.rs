@@ -17,7 +17,8 @@ struct Cli {
 
 fn run_parent() -> Result<()> {
     let pane_id = tmux::get_tmux_pane_id()?;
-    let pane_content = tmux::capture_pane(&pane_id).unwrap_or_default();
+    let in_copy_mode = tmux::is_in_copy_mode(&pane_id);
+    let pane_content = tmux::capture_pane(&pane_id, in_copy_mode).unwrap_or_default();
     let _ = tmux::write_pane_content_buffer(&pane_id, &pane_content);
 
     let (x, y, w, h) = if let Some(dimensions) = tmux::get_pane_dimensions(&pane_id) {
@@ -59,6 +60,9 @@ fn run_parent() -> Result<()> {
 
     let action = tmux::ExitAction::from_exit_code(status.code());
     if let Some(text) = result_text {
+        if in_copy_mode && action.should_paste() {
+            tmux::exit_copy_mode(&pane_id);
+        }
         tmux::Clipboard::copy_and_paste(
             &text,
             &pane_id,
@@ -81,7 +85,7 @@ fn run_interactive(cli: &Cli) -> Result<()> {
 
     let pane_content = tmux::read_pane_content_buffer(&pane_id)
         .ok()
-        .unwrap_or_else(|| tmux::capture_pane(&pane_id).unwrap_or_default());
+        .unwrap_or_else(|| tmux::capture_pane(&pane_id, false).unwrap_or_default());
 
     let mut ui = InteractiveUI::new(pane_id, &pane_content, config);
     ui.run()?;
