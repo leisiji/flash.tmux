@@ -122,14 +122,6 @@ fn copy_mode_line_range(pane_id: &str) -> Option<(String, String)> {
     Some((start.to_string(), end.to_string()))
 }
 
-pub fn capture_pane_window_dims() -> Option<String> {
-    tmux_output_trim(
-        &["display-message", "-p", "#{window_width},#{window_height}"],
-        TrimMode::Trim,
-    )
-    .ok()
-}
-
 pub fn get_pane_dimensions(pane_id: &str) -> Option<PaneDimensions> {
     let out = tmux_output_trim(
         &[

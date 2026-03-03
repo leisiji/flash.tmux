@@ -21,15 +21,9 @@ fn run_parent() -> Result<()> {
     let pane_content = tmux::capture_pane(&pane_id, in_copy_mode).unwrap_or_default();
     let _ = tmux::write_pane_content_buffer(&pane_id, &pane_content);
 
-    let (x, y, w, h) = if let Some(dimensions) = tmux::get_pane_dimensions(&pane_id) {
-        tmux::calculate_popup_position(&dimensions)
-    } else {
-        let fallback = tmux::capture_pane_window_dims().unwrap_or_else(|| "160,40".to_string());
-        let mut parts = fallback.split(',');
-        let w = parts.next().and_then(|v| v.parse().ok()).unwrap_or(160);
-        let h = parts.next().and_then(|v| v.parse().ok()).unwrap_or(40);
-        (0, 0, w, h)
-    };
+    let dimensions =
+        tmux::get_pane_dimensions(&pane_id).context("failed to get pane dimensions")?;
+    let (x, y, w, h) = tmux::calculate_popup_position(&dimensions);
 
     let exe = std::env::current_exe().context("failed to locate executable")?;
     let exe = exe.to_string_lossy().to_string();
