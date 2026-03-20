@@ -26,7 +26,7 @@ impl Config {
             prompt_placeholder_text: "search...".to_string(),
             prompt_indicator: "❯".to_string(),
             label_characters: "jklhgfdsauiopytrewqnmvbcxz".to_string(),
-            trimmable_chars: "()[]{}\"'`".to_string(),
+            trimmable_chars: "()[]{}\"'`,.:;".to_string(),
             highlight_style: StyleSpec::new(Some(Color::Rgb {
                 r: 186,
                 g: 187,

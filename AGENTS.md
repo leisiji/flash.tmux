@@ -20,7 +20,7 @@ Context for this repo:
 - Search tokens are whitespace-delimited; match is case-insensitive.
 - Labels are lowercase only; typing lowercase label auto-pastes, uppercase copies only.
 - Enter/Space pick the first match; Ctrl-C/Ctrl-D/Esc cancel.
-- Output text trims leading/trailing wrapper chars ((), [], {}, quotes, backticks) but never trims through the match span.
+- Output text trims leading/trailing wrapper chars and punctuation ((), [], {}, quotes, backticks, commas, periods, colons, semicolons) but never trims through the match span.
 
 ## UI styling
 

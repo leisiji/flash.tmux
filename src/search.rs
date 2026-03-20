@@ -318,6 +318,13 @@ mod tests {
     }
 
     #[test]
+    fn trim_wrapping_token_punctuation() {
+        let token = ",:foo.;";
+        let trimmed = trim_wrapping_token(token, 2, 5, &default_trimmable());
+        assert_eq!(trimmed, "foo");
+    }
+
+    #[test]
     fn delete_prev_word_basic() {
         assert_eq!(delete_prev_word("foo bar"), "foo ");
     }
