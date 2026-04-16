@@ -143,7 +143,7 @@ pub fn trim_wrapping_token<'a>(
         if idx >= match_start {
             break;
         }
-        if trimmable_chars.contains(ch) {
+        if is_leading_trimmable(ch, trimmable_chars) {
             start = idx + ch.len_utf8();
         } else {
             break;
@@ -170,6 +170,10 @@ pub fn trim_wrapping_token<'a>(
     } else {
         &token[start..end]
     }
+}
+
+fn is_leading_trimmable(ch: char, trimmable_chars: &str) -> bool {
+    ch != '.' && trimmable_chars.contains(ch)
 }
 
 fn ascii_case_insensitive_eq(left: &[u8], right: &[u8]) -> bool {
@@ -322,6 +326,20 @@ mod tests {
         let token = ",:foo.;";
         let trimmed = trim_wrapping_token(token, 2, 5, &default_trimmable());
         assert_eq!(trimmed, "foo");
+    }
+
+    #[test]
+    fn trim_wrapping_token_preserves_leading_dot() {
+        let token = ".gitignore";
+        let trimmed = trim_wrapping_token(token, 1, 4, &default_trimmable());
+        assert_eq!(trimmed, ".gitignore");
+    }
+
+    #[test]
+    fn trim_wrapping_token_preserves_leading_dots_but_trims_trailing_dot() {
+        let token = "../some_dir/.";
+        let trimmed = trim_wrapping_token(token, 3, 11, &default_trimmable());
+        assert_eq!(trimmed, "../some_dir/");
     }
 
     #[test]
