@@ -73,10 +73,7 @@ impl<'a> SearchInterface<'a> {
                                 match_start: match_pos,
                                 match_end: match_pos + query_len,
                             };
-
-                            if !contains_match(&self.matches, candidate) {
-                                self.matches.push(candidate);
-                            }
+                            self.matches.push(candidate);
                         }
                     }
 
@@ -195,16 +192,6 @@ fn ascii_case_insensitive_eq(left: &[u8], right: &[u8]) -> bool {
         .all(|(a, b)| a.eq_ignore_ascii_case(b))
 }
 
-fn contains_match(existing: &[SearchMatch<'_>], candidate: SearchMatch<'_>) -> bool {
-    existing.iter().any(|current| {
-        current.line == candidate.line
-            && current.col == candidate.col
-            && current.match_start == candidate.match_start
-            && std::ptr::eq(current.text.as_ptr(), candidate.text.as_ptr())
-            && current.text.len() == candidate.text.len()
-    })
-}
-
 fn assign_labels(matches: &mut [SearchMatch<'_>], query: &str, label_chars: &str) {
     let mut query_chars = [false; 256];
     let mut continuation_chars = [false; 256];
@@ -279,6 +266,24 @@ mod tests {
         assert_eq!(matches.len(), 2);
         assert_eq!(matches[0].col, 4);
         assert_eq!(matches[1].col, 0);
+    }
+
+    #[test]
+    fn search_does_not_emit_duplicate_matches() {
+        let mut search = SearchInterface::new("abc abc abc", default_labels());
+        let matches = search.search("a");
+
+        for (idx, left) in matches.iter().enumerate() {
+            for right in &matches[idx + 1..] {
+                assert!(
+                    left.line != right.line
+                        || left.col != right.col
+                        || left.match_start != right.match_start
+                        || !std::ptr::eq(left.text.as_ptr(), right.text.as_ptr())
+                        || left.text.len() != right.text.len()
+                );
+            }
+        }
     }
 
     #[test]
